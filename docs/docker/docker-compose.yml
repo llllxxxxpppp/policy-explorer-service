@@ -1,0 +1,109 @@
+# 🚨 초안(draft) docker-compose — policy-explorer(파일 업로드 RAG 버전)를 Ollama와 함께
+#    구동하는 예시입니다. 04-deployment-guide.md와 함께 읽어주세요.
+#
+# 전제조건:
+#   1. 03-environment-config.md에서 제안한 환경변수 리팩터링이 코드에 반영되어 있어야
+#      아래 environment: 값들이 실제로 적용됩니다. (아직 반영 전이라면 이 파일은
+#      "목표 구성을 보여주는 참고 자료"로만 사용하세요.)
+#   2. GPU를 사용하려면 호스트에 NVIDIA 드라이버 + nvidia-container-toolkit이 설치되어 있어야
+#      합니다.
+#   3. policy_explorer_uploads 볼륨은 NFS 서버 주소가 필요합니다 (09-data-architecture.md
+#      참고). NFS 서버가 없다면 하단의 driver_opts를 지우고 로컬 named volume으로 대체해
+#      먼저 테스트할 수 있습니다 (단, 그 경우 "여러 서비스가 원본 파일을 공유"하는 이점은
+#      없어집니다).
+#
+# vLLM 조합을 함께 구성하려면, 공식 이미지(vllm/vllm-openai)를 별도 서비스로 추가하고
+# policy-explorer-bench 쪽 VLLM_BASE_URL이 그 서비스명을 가리키도록 설정하면 됩니다.
+# (예시는 하단 주석 참고)
+
+services:
+  # 실제 LLM 추론을 담당하는 Ollama 서버
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # policy-explorer 실서비스 (PDF/DOCX 업로드 RAG 버전)
+  policy-explorer:
+    build:
+      context: ../..
+      dockerfile: docs/docker/Dockerfile.fileupload
+    ports:
+      - "8001:8001"
+    environment:
+      - SERVICE_PORT=8001
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=qwen2.5:7b
+      - EMBEDDING_MODEL_NAME=jhgan/ko-sroberta-multitask
+      # 인스턴스 로컬 볼륨 — SQLite(METADATA_DB_PATH)는 네트워크 파일시스템에 두지 않습니다
+      # (동시쓰기 파일 잠금 문제, 09-data-architecture.md 참고).
+      - CHROMA_PERSIST_DIR=/data/state/chroma_db_fileupload
+      - METADATA_DB_PATH=/data/state/documents.db
+      - LOG_DIR=/data/state/logs
+      # 공유 네트워크 볼륨(NFS) — 원본 파일은 다른 서비스와 공유 가능해야 하므로 분리합니다.
+      - UPLOAD_DIR=/data/uploads
+    volumes:
+      - policy_explorer_state:/data/state
+      - policy_explorer_uploads:/data/uploads
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+volumes:
+  ollama_models:
+  # SQLite/Chroma/로그 — 단일 인스턴스 전제, 로컬 볼륨으로 충분합니다.
+  policy_explorer_state:
+  # 업로드 원본 파일 — NFS 공유 볼륨 예시. <NFS_SERVER_IP>와 device 경로를 실제 환경에
+  # 맞게 바꾸세요. NFS 서버가 없다면 이 블록을 지우고 `policy_explorer_uploads:`만 남겨
+  # 로컬 named volume으로 테스트할 수 있습니다.
+  policy_explorer_uploads:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: "addr=<NFS_SERVER_IP>,rw,nolock,soft"
+      device: ":/path/on/nfs/policy-explorer-uploads"
+
+# --- vLLM 조합을 추가하고 싶다면 (예시, 주석 해제 후 사용) ---
+# services:
+#   vllm:
+#     image: vllm/vllm-openai:latest
+#     command: ["--model", "Qwen/Qwen2.5-7B-Instruct", "--quantization", "bitsandbytes",
+#                "--load-format", "bitsandbytes", "--gpu-memory-utilization", "0.8",
+#                "--max-model-len", "2048", "--enforce-eager", "--max-num-seqs", "16"]
+#     ports:
+#       - "8000:8000"
+#     deploy:
+#       resources:
+#         reservations:
+#           devices:
+#             - driver: nvidia
+#               count: all
+#               capabilities: [gpu]
+#
+#   policy-explorer-bench-vllm-qwen:
+#     build:
+#       context: ../..
+#       dockerfile: docs/docker/Dockerfile.benchmark
+#       args:
+#         SCRIPT_NAME: lxp-vllm-qwen.py
+#     ports:
+#       - "8080:8080"
+#     environment:
+#       - VLLM_BASE_URL=http://vllm:8000/v1
+#       - VLLM_MODEL_NAME=Qwen/Qwen2.5-7B-Instruct
+#     depends_on:
+#       - vllm

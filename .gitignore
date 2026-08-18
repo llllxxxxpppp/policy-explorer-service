@@ -1,0 +1,80 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+# ==============================================================================
+# Python Core & Bytecode
+# ==============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ==============================================================================
+# Environment & Package Managers
+# ==============================================================================
+# Block local virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Block tool-specific environment caches
+.python-version
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pdm-build/
+
+# NOTE: DO NOT ignore 'uv.lock' or 'pyproject.toml'.
+# The official uv documentation recommends committing 'uv.lock' to version control
+# to ensure reproducible and consistent installations across environments.
+
+# ==============================================================================
+# FastAPI / Web App Specifics
+# ==============================================================================
+# Environment variables containing sensitive secrets (API keys, DB credentials)
+.env
+.env.local
+.env.*.local
+*.env
+
+# Local database instances / SQLite caches
+*.db
+*.sqlite3
+
+# Application logs
+*.log
+logs/
+
+# ==============================================================================
+# OS & IDE Specifics (Optional but Recommended)
+# ==============================================================================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

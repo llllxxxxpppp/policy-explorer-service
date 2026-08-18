@@ -1,0 +1,30 @@
+# 🚨 초안(draft) Dockerfile — 벤치마크용 4개 스크립트 공용
+#   (lxp-ollama-qwen.py / lxp-ollama-exaone.py / lxp-vllm-qwen.py / lxp-vllm-exaone.py)
+#
+# 빌드 시 --build-arg SCRIPT_NAME=<파일명>으로 어떤 조합을 이미지에 담을지 선택합니다.
+# 예) docker build -f docs/docker/Dockerfile.benchmark --build-arg SCRIPT_NAME=lxp-vllm-qwen.py -t policy-explorer-bench:vllm-qwen ..
+#
+# GPU 관련: vLLM 조합(lxp-vllm-*.py)의 이 컨테이너 자체는 vLLM 서버에 HTTP로 붙는
+# 클라이언트일 뿐이라 GPU가 필요 없습니다. 실제 vLLM 추론 서버는 별도 컨테이너/프로세스로
+# 띄워야 합니다 (04-deployment-guide.md 참고).
+
+FROM python:3.12-slim
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+
+WORKDIR /app
+
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-install-project
+
+ARG SCRIPT_NAME=lxp-ollama-qwen.py
+ENV SCRIPT_NAME=${SCRIPT_NAME}
+
+COPY ${SCRIPT_NAME} ./
+
+RUN mkdir -p /data/chroma_db /data/logs
+
+# Ollama 조합은 8000, vLLM 조합은 8080이 기본값입니다 (파일마다 다름 — 03-environment-config.md 참고)
+EXPOSE 8000 8080
+
+CMD uv run python "$SCRIPT_NAME"
